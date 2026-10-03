@@ -57,6 +57,18 @@ Without these values the app still works fully, saving on the device only.
 > app's public key read and write the data. That is fine for getting started; add
 > Supabase Auth before sharing the app publicly.
 
+## Hosting (GitHub Pages)
+
+Every push to `main` runs `.github/workflows/deploy.yml`, which lints, tests, builds, and
+publishes the app to `https://<owner>.github.io/<repo>/`.
+
+One-time setup in the GitHub repo:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
+2. Optional, for cloud sync: **Settings → Secrets and variables → Actions → New repository secret**,
+   add `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, then re-run the workflow
+   (**Actions → Deploy to GitHub Pages → Run workflow**).
+
 ## Project layout
 
 | Path | Purpose |
@@ -68,3 +80,4 @@ Without these values the app still works fully, saving on the device only.
 | `src/stats.ts`, `src/export.ts` | Stat sheet numbers and CSV export |
 | `src/components/` | Screens: match list, live tracking, timeline, goal box, stat sheet, players |
 | `supabase/migrations/` | Database schema for Supabase |
+| `.github/workflows/deploy.yml` | Build and publish to GitHub Pages |

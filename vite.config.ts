@@ -5,6 +5,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // GitHub Pages serves the app from /<repo>/; set by the deploy workflow.
+  base: process.env.BASE_PATH ?? '/',
   plugins: [
     react(),
     // Service worker caches the whole app so it opens with no signal.
