@@ -10,6 +10,9 @@ export interface SyncStatus {
   pending: number
   lastSyncedAt: string | null
   lastError: string | null
+  /** Downloading matches from the cloud (e.g. on a new device). */
+  pulling: boolean
+  lastPulledAt: string | null
 }
 
 let status: SyncStatus = {
@@ -19,6 +22,8 @@ let status: SyncStatus = {
   pending: 0,
   lastSyncedAt: null,
   lastError: null,
+  pulling: false,
+  lastPulledAt: null,
 }
 const listeners = new Set<() => void>()
 
@@ -68,6 +73,46 @@ const toPlayerRow = (p: Player) => ({
   created_at: p.createdAt,
   updated_at: p.updatedAt,
   deleted: p.deleted === 1,
+})
+
+type Row = Record<string, unknown>
+
+/** Postgres returns `+00:00` timestamps; store the same `Z` format the app writes. */
+const iso = (v: unknown) => new Date(String(v)).toISOString()
+
+const fromMatchRow = (r: Row): Match => ({
+  id: r.id as string,
+  homeName: r.home_name as string,
+  awayName: r.away_name as string,
+  status: r.status as Match['status'],
+  clock: r.clock as Match['clock'],
+  createdAt: iso(r.created_at),
+  updatedAt: iso(r.updated_at),
+  synced: 1,
+})
+
+const fromEventRow = (r: Row): MatchEvent => ({
+  id: r.id as string,
+  matchId: r.match_id as string,
+  team: r.team as MatchEvent['team'],
+  type: r.type as MatchEvent['type'],
+  matchMs: Number(r.match_ms),
+  player: (r.player as string | null) ?? null,
+  assist: (r.assist as string | null) ?? null,
+  recordedAt: iso(r.recorded_at),
+  updatedAt: iso(r.updated_at),
+  deleted: r.deleted ? 1 : 0,
+  synced: 1,
+})
+
+const fromPlayerRow = (r: Row): Player => ({
+  id: r.id as string,
+  name: r.name as string,
+  team: r.team as string,
+  createdAt: iso(r.created_at),
+  updatedAt: iso(r.updated_at),
+  deleted: r.deleted ? 1 : 0,
+  synced: 1,
 })
 
 async function countPending() {
@@ -138,10 +183,71 @@ export async function syncNow(): Promise<void> {
   }
 }
 
+const PAGE = 1000
+
+/** Supabase returns at most ~1000 rows per request, so read in pages. */
+async function fetchAll(remote: string): Promise<Row[]> {
+  const rows: Row[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase!
+      .from(remote)
+      .select('*')
+      .order('id')
+      .range(from, from + PAGE - 1)
+    if (error) throw new Error(`${remote}: ${error.message}`)
+    rows.push(...((data ?? []) as Row[]))
+    if (!data || data.length < PAGE) return rows
+  }
+}
+
+/**
+ * Merge cloud rows into the device. A local row is only replaced when it has
+ * no unsynced changes and the cloud copy is newer, so nothing logged on this
+ * device is ever overwritten.
+ */
+async function pullTable<T extends { id: string; updatedAt: string; synced: 0 | 1 }>(
+  table: EntityTable<T, 'id'>,
+  remote: string,
+  fromRow: (r: Row) => T,
+) {
+  const incoming = (await fetchAll(remote)).map(fromRow)
+  await db.transaction('rw', table, async () => {
+    const existing = await table.bulkGet(incoming.map((r) => r.id as never))
+    const toPut = incoming.filter((r, i) => {
+      const local = existing[i]
+      return !local || (local.synced === 1 && Date.parse(r.updatedAt) > Date.parse(local.updatedAt))
+    })
+    if (toPut.length) await table.bulkPut(toPut as never)
+  })
+}
+
+let pulling = false
+
+/** Download everything from the cloud. Uploads anything pending first. */
+export async function pullFromCloud(): Promise<void> {
+  if (pulling || !supabase || !navigator.onLine) return
+  pulling = true
+  setStatus({ pulling: true })
+  try {
+    await syncNow()
+    await pullTable(db.matches, 'matches', fromMatchRow)
+    await pullTable(db.events, 'events', fromEventRow)
+    await pullTable(db.players, 'players', fromPlayerRow)
+    setStatus({ lastPulledAt: new Date().toISOString(), lastError: null })
+  } catch (err) {
+    setStatus({ lastError: err instanceof Error ? err.message : String(err) })
+  } finally {
+    pulling = false
+    setStatus({ pulling: false })
+  }
+}
+
 let timer: ReturnType<typeof setTimeout> | undefined
 
 /** Called after every local write. Debounced and never awaited by the UI. */
 export function requestSync() {
+  // Update the badge right away so it never claims "all saved" while a write waits.
+  void countPending().then((pending) => setStatus({ pending }))
   clearTimeout(timer)
   timer = setTimeout(() => void syncNow(), 500)
 }
@@ -150,13 +256,14 @@ export function startSyncLoop() {
   const onOnline = () => {
     setStatus({ online: true })
     requestSync()
+    void pullFromCloud()
   }
   const onOffline = () => setStatus({ online: false })
   window.addEventListener('online', onOnline)
   window.addEventListener('offline', onOffline)
   // navigator.onLine can claim "online" with no real connection, so retry on a timer too.
   const interval = setInterval(() => void syncNow(), 15000)
-  void syncNow()
+  void pullFromCloud()
   return () => {
     window.removeEventListener('online', onOnline)
     window.removeEventListener('offline', onOffline)

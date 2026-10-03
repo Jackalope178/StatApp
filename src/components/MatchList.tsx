@@ -2,6 +2,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { createMatch } from '../actions'
 import { db } from '../db'
+import { useSyncStatus } from '../hooks'
+import { pullFromCloud } from '../sync'
 
 interface Props {
   onOpen: (id: string) => void
@@ -12,6 +14,7 @@ export function MatchList({ onOpen, onPlayers }: Props) {
   const [home, setHome] = useState('')
   const [away, setAway] = useState('')
   const matches = useLiveQuery(() => db.matches.orderBy('createdAt').reverse().toArray(), []) ?? []
+  const sync = useSyncStatus()
 
   return (
     <div className="home">
@@ -41,9 +44,33 @@ export function MatchList({ onOpen, onPlayers }: Props) {
         Player databank
       </button>
 
-      {matches.length > 0 && (
-        <div className="card">
+      <div className="card">
+        <div className="card-head">
           <h2>Matches</h2>
+          {sync.configured && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={sync.pulling || !sync.online}
+              title="Load matches saved from other devices"
+              onClick={() => void pullFromCloud()}
+            >
+              {sync.pulling ? 'Loading…' : '↻ Refresh'}
+            </button>
+          )}
+        </div>
+        {matches.length === 0 && (
+          <p className="muted">
+            {sync.pulling
+              ? 'Loading saved matches from the cloud…'
+              : !sync.configured
+                ? 'No matches yet.'
+                : sync.online
+                  ? 'No matches yet. Matches saved from any device appear here.'
+                  : 'No matches on this device. Connect to the internet to load matches saved in the cloud.'}
+          </p>
+        )}
+        {matches.length > 0 && (
           <ul className="match-list">
             {matches.map((m) => (
               <li key={m.id}>
@@ -58,8 +85,8 @@ export function MatchList({ onOpen, onPlayers }: Props) {
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

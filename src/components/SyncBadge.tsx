@@ -1,5 +1,5 @@
 import { useSyncStatus } from '../hooks'
-import { syncNow } from '../sync'
+import { pullFromCloud, syncNow } from '../sync'
 
 export function SyncBadge() {
   const s = useSyncStatus()
@@ -8,6 +8,9 @@ export function SyncBadge() {
   if (!s.configured) {
     text = 'On-device only (cloud not set up)'
     tone = 'off'
+  } else if (s.pulling) {
+    text = 'Loading from cloud…'
+    tone = 'warn'
   } else if (s.pending === 0) {
     text = 'All saved to cloud'
     tone = 'ok'
@@ -25,7 +28,7 @@ export function SyncBadge() {
     <button
       type="button"
       className={`sync-badge sync-${tone}`}
-      onClick={() => void syncNow()}
+      onClick={() => void (s.online ? pullFromCloud() : syncNow())}
       title={s.lastError ?? (s.lastSyncedAt ? `Last upload ${new Date(s.lastSyncedAt).toLocaleTimeString()}` : 'Tap to retry')}
     >
       <span className="dot" aria-hidden /> {text}

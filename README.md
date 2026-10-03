@@ -28,9 +28,12 @@ each tap (`recorded_at`), to help line events up with separately recorded footag
 2. A background sync (`src/sync.ts`) uploads unsynced rows to Supabase every 15 seconds,
    when the device comes back online, and shortly after each tap. Uploads are upserts keyed
    on IDs created on the device, so retries never duplicate data.
-3. The badge at the top shows the state: `All saved to cloud`, `Offline · N saved on device`,
+3. When the app opens with signal (or you tap **↻ Refresh** on the match list), it also
+   downloads matches, events, and players from Supabase, so a new phone or laptop sees every
+   saved match. Changes on this device that haven't uploaded yet are never overwritten.
+4. The badge at the top shows the state: `All saved to cloud`, `Offline · N saved on device`,
    and so on. Tap it to retry.
-4. The app is a PWA: a service worker caches it, so it opens with no signal.
+5. The app is a PWA: a service worker caches it, so it opens with no signal.
    **Open it once on Wi-Fi before the game** (and ideally "Add to Home Screen").
 
 ## Running it locally
