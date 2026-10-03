@@ -58,6 +58,8 @@ h1, h2, h3 { margin: 0 0 0.5rem; }
 .sync-ok .dot { background: var(--ok); }
 .sync-warn .dot { background: var(--warn); }
 
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card-head h2 { margin: 0; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 12px 0; }
 label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; }
 input {
